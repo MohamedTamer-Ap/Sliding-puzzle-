@@ -1,0 +1,147 @@
+<style>
+  .game-wrap { padding: 1.5rem 0; font-family: var(--font-sans); display: flex; flex-direction: column; align-items: center; gap: 1.5rem; }
+  .stats { display: flex; gap: 12px; width: 100%; max-width: 400px; }
+  .stat { flex: 1; background: var(--color-background-secondary); border-radius: var(--border-radius-md); padding: 0.75rem 1rem; text-align: center; }
+  .stat-label { font-size: 12px; color: var(--color-text-secondary); margin-bottom: 4px; }
+  .stat-val { font-size: 22px; font-weight: 500; color: var(--color-text-primary); }
+  .board { display: grid; gap: 6px; background: var(--color-background-secondary); border: 0.5px solid var(--color-border-tertiary); border-radius: var(--border-radius-lg); padding: 10px; }
+  .tile { display: flex; align-items: center; justify-content: center; border-radius: var(--border-radius-md); font-size: 22px; font-weight: 500; cursor: pointer; border: 0.5px solid var(--color-border-secondary); background: var(--color-background-primary); color: var(--color-text-primary); transition: transform 0.1s, background 0.15s; user-select: none; }
+  .tile:hover { background: var(--color-background-secondary); }
+  .tile:active { transform: scale(0.95); }
+  .tile.empty { background: var(--color-background-tertiary); border-color: var(--color-border-tertiary); cursor: default; }
+  .tile.correct { background: #E1F5EE; color: #085041; border-color: #5DCAA5; }
+  .controls { display: flex; gap: 10px; }
+  .size-btns { display: flex; gap: 6px; }
+  .size-btn { padding: 6px 14px; font-size: 13px; border-radius: var(--border-radius-md); border: 0.5px solid var(--color-border-secondary); background: var(--color-background-primary); color: var(--color-text-secondary); cursor: pointer; }
+  .size-btn.active { background: var(--color-background-secondary); color: var(--color-text-primary); border-color: var(--color-border-primary); }
+  .win-banner { background: #E1F5EE; border: 0.5px solid #5DCAA5; border-radius: var(--border-radius-lg); padding: 1rem 2rem; text-align: center; color: #085041; font-size: 16px; font-weight: 500; display: none; }
+  .win-banner.show { display: block; }
+  .hint { font-size: 13px; color: var(--color-text-tertiary); }
+</style>
+
+<div class="game-wrap">
+  <h2 class="sr-only">Sliding puzzle — arrange numbered tiles in order by clicking tiles adjacent to the empty space.</h2>
+
+  <div class="stats">
+    <div class="stat"><div class="stat-label">Moves</div><div class="stat-val" id="moves">0</div></div>
+    <div class="stat"><div class="stat-label">Time</div><div class="stat-val" id="timer">0:00</div></div>
+    <div class="stat"><div class="stat-label">Best</div><div class="stat-val" id="best">—</div></div>
+  </div>
+
+  <div class="size-btns">
+    <button class="size-btn active" onclick="setSize(3,this)">3 × 3</button>
+    <button class="size-btn" onclick="setSize(4,this)">4 × 4</button>
+    <button class="size-btn" onclick="setSize(5,this)">5 × 5</button>
+  </div>
+
+  <div class="board" id="board"></div>
+
+  <div class="win-banner" id="win-banner">Solved! Great job.</div>
+
+  <div class="controls">
+    <button onclick="newGame()">New game</button>
+    <button onclick="sendPrompt('Give me tips to solve a sliding puzzle faster')">Strategy tips ↗</button>
+  </div>
+
+  <div class="hint" id="hint">Click any tile next to the blank space to move it.</div>
+</div>
+
+<script>
+let N = 3, tiles = [], empty = 0, moves = 0, seconds = 0, interval = null, started = false, best = {};
+
+function setSize(n, btn) {
+  document.querySelectorAll('.size-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  N = n;
+  newGame();
+}
+
+function newGame() {
+  clearInterval(interval);
+  moves = 0; seconds = 0; started = false;
+  document.getElementById('moves').textContent = '0';
+  document.getElementById('timer').textContent = '0:00';
+  document.getElementById('win-banner').classList.remove('show');
+  document.getElementById('hint').textContent = 'Click any tile next to the blank space to move it.';
+
+  tiles = Array.from({length: N*N}, (_,i) => i);
+  do { shuffle(tiles); } while (!isSolvable(tiles) || isSolved());
+  empty = tiles.indexOf(0);
+  render();
+}
+
+function shuffle(arr) {
+  for (let i = arr.length-1; i > 0; i--) {
+    const j = Math.floor(Math.random()*(i+1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+}
+
+function isSolvable(arr) {
+  let inv = 0;
+  for (let i = 0; i < arr.length; i++)
+    for (let j = i+1; j < arr.length; j++)
+      if (arr[i] && arr[j] && arr[i] > arr[j]) inv++;
+  if (N % 2 === 1) return inv % 2 === 0;
+  const row = Math.floor(arr.indexOf(0) / N);
+  const fromBottom = N - row;
+  return (fromBottom % 2 === 0) ? (inv % 2 === 1) : (inv % 2 === 0);
+}
+
+function isSolved() {
+  return tiles.every((v,i) => v === (i === N*N-1 ? 0 : i+1));
+}
+
+function canMove(idx) {
+  const er = Math.floor(empty/N), ec = empty%N;
+  const tr = Math.floor(idx/N), tc = idx%N;
+  return (er===tr && Math.abs(ec-tc)===1) || (ec===tc && Math.abs(er-tr)===1);
+}
+
+function move(idx) {
+  if (!canMove(idx)) return;
+  if (!started) {
+    started = true;
+    interval = setInterval(() => {
+      seconds++;
+      const m = Math.floor(seconds/60), s = seconds%60;
+      document.getElementById('timer').textContent = m+':'+(s<10?'0':'')+s;
+    }, 1000);
+  }
+  [tiles[empty], tiles[idx]] = [tiles[idx], tiles[empty]];
+  empty = idx;
+  moves++;
+  document.getElementById('moves').textContent = moves;
+  render();
+  if (isSolved()) win();
+}
+
+function win() {
+  clearInterval(interval);
+  const key = N+'x'+N;
+  if (!best[key] || moves < best[key]) best[key] = moves;
+  document.getElementById('best').textContent = best[N+'x'+N];
+  document.getElementById('win-banner').classList.add('show');
+  document.getElementById('hint').textContent = 'Puzzle solved in '+moves+' moves and '+document.getElementById('timer').textContent+'!';
+}
+
+function render() {
+  const board = document.getElementById('board');
+  const size = N <= 3 ? 380 : N === 4 ? 380 : 370;
+  const tileSize = Math.floor((size - 10*2 - 6*(N-1)) / N);
+  board.style.gridTemplateColumns = `repeat(${N}, ${tileSize}px)`;
+  board.style.width = (tileSize*N + 6*(N-1) + 20) + 'px';
+  board.innerHTML = '';
+  tiles.forEach((val, idx) => {
+    const d = document.createElement('div');
+    d.className = 'tile' + (val===0?' empty':'') + (val!==0 && val===(idx===N*N-1?0:idx+1)?' correct':'');
+    d.style.width = tileSize+'px';
+    d.style.height = tileSize+'px';
+    d.style.fontSize = N >= 5 ? '16px' : '22px';
+    if (val !== 0) { d.textContent = val; d.onclick = () => move(idx); }
+    board.appendChild(d);
+  });
+}
+
+newGame();
+</script>
